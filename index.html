@@ -4,8 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Walk & Run Mile Tracker</title>
-  <!-- Free Leaflet Map CSS -->
-  <link rel="stylesheet" href="https://unpkg.com" />
+  <link rel="stylesheet" href="https://jsdelivr.net" />
   <style>
     body {
       font-family: system-ui, -apple-system, sans-serif;
@@ -29,15 +28,24 @@
       margin: 10px 0;
     }
     .status {
-      color: #555;
+      color: #333;
+      background: #eef3fc;
+      padding: 10px 12px;
+      border-radius: 8px;
       font-size: 0.9rem;
       margin-bottom: 15px;
     }
     #map {
-      height: 280px;
+      height: 260px;
       width: 100%;
       border-radius: 12px;
       margin-bottom: 15px;
+      background: #e9ecef;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #666;
+      font-size: 0.85rem;
     }
     button {
       padding: 14px 24px;
@@ -59,16 +67,16 @@
     <h2>Mile Tracker</h2>
     <div class="miles-display"><span id="miles">0.00</span> mi</div>
     <div class="status" id="status">Press Start to begin tracking</div>
-    <div id="map"></div>
-    <button id="startBtn">Start</button>
-    <button id="stopBtn">Stop</button>
-    <button id="resetBtn">Reset</button>
+    <div id="map">Map loading...</div>
+    <button id="startBtn" type="button">Start</button>
+    <button id="stopBtn" type="button">Stop</button>
+    <button id="resetBtn" type="button">Reset</button>
   </div>
 
-  <!-- Free Leaflet Map JS -->
-  <script src="https://unpkg.com"></script>
+  <script src="https://jsdelivr.net"></script>
   <script>
     let watchId = null;
+    let wakeLock = null;
     let totalMiles = 0;
     let lastCoords = null;
     let pathCoords = [];
@@ -79,18 +87,28 @@
     const stopBtn = document.getElementById('stopBtn');
     const resetBtn = document.getElementById('resetBtn');
 
-    // Initialize free OpenStreetMap view
-    const map = L.map('map').setView([39.8283, -98.5795], 4);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
-
-    const routeLine = L.polyline([], { color: '#1a73e8', weight: 5 }).addTo(map);
+    // Safely initialize map so button still works even if map fails
+    let map = null;
+    let routeLine = null;
     let userMarker = null;
 
-    // Calculate distance in miles between two GPS points
+    try {
+      if (typeof L !== 'undefined') {
+        document.getElementById('map').textContent = '';
+        map = L.map('map').setView([39.8283, -98.5795], 4);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap'
+        }).addTo(map);
+        routeLine = L.polyline([], { color: '#1a73e8', weight: 5 }).addTo(map);
+      } else {
+        document.getElementById('map').textContent = 'Map unavailable (GPS tracking still works!)';
+      }
+    } catch (e) {
+      document.getElementById('map').textContent = 'Map unavailable (GPS tracking still works!)';
+    }
+
     function calculateMiles(lat1, lon1, lat2, lon2) {
-      const R = 3958.8; // Earth's radius in miles
+      const R = 3958.8;
       const toRad = (deg) => deg * (Math.PI / 180);
       const dLat = toRad(lat2 - lat1);
       const dLon = toRad(lon2 - lon1);
@@ -102,27 +120,35 @@
       return R * c;
     }
 
+    async function requestWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+        }
+      } catch (err) {}
+    }
+
     startBtn.addEventListener('click', () => {
       if (!navigator.geolocation) {
         statusEl.textContent = 'Geolocation is not supported by your browser.';
         return;
       }
 
-      statusEl.textContent = 'Acquiring GPS signal...';
+      statusEl.textContent = 'Requesting GPS location...';
       startBtn.style.display = 'none';
       stopBtn.style.display = 'inline-block';
+      requestWakeLock();
 
       watchId = navigator.geolocation.watchPosition(
         (position) => {
           const { latitude, longitude, accuracy } = position.coords;
 
-          // Ignore wildly inaccurate GPS jumps (> 30 meters)
-          if (accuracy > 30) {
-            statusEl.textContent = `Weak GPS signal (±${Math.round(accuracy)}m)...`;
+          if (accuracy > 100) {
+            statusEl.textContent = `Weak GPS signal (±${Math.round(accuracy)}m). Step near a window or outside.`;
             return;
           }
 
-          statusEl.textContent = `Tracking active (Accuracy: ±${Math.round(accuracy)}m)`;
+          statusEl.textContent = `GPS Connected (±${Math.round(accuracy)}m)`;
           const currentPoint = [latitude, longitude];
 
           if (lastCoords) {
@@ -132,34 +158,37 @@
               latitude,
               longitude
             );
-            // Filter out tiny stationary GPS drift (< 0.002 miles / ~10 feet)
             if (dist > 0.002) {
               totalMiles += dist;
               milesEl.textContent = totalMiles.toFixed(2);
               lastCoords = { latitude, longitude };
               pathCoords.push(currentPoint);
-              routeLine.setLatLngs(pathCoords);
+              if (routeLine) routeLine.setLatLngs(pathCoords);
             }
           } else {
             lastCoords = { latitude, longitude };
             pathCoords.push(currentPoint);
-            routeLine.setLatLngs(pathCoords);
+            if (routeLine) routeLine.setLatLngs(pathCoords);
           }
 
-          if (!userMarker) {
-            userMarker = L.marker(currentPoint).addTo(map);
-          } else {
-            userMarker.setLatLng(currentPoint);
+          if (map) {
+            if (!userMarker) {
+              userMarker = L.marker(currentPoint).addTo(map);
+            } else {
+              userMarker.setLatLng(currentPoint);
+            }
+            map.setView(currentPoint, 16);
           }
-          map.setView(currentPoint, 16);
         },
         (error) => {
-          statusEl.textContent = `Error: ${error.message}`;
+          statusEl.textContent = `GPS Error: ${error.message}`;
+          startBtn.style.display = 'inline-block';
+          stopBtn.style.display = 'none';
         },
         {
           enableHighAccuracy: true,
           maximumAge: 0,
-          timeout: 10000
+          timeout: 15000
         }
       );
     });
@@ -168,6 +197,10 @@
       if (watchId !== null) {
         navigator.geolocation.clearWatch(watchId);
         watchId = null;
+      }
+      if (wakeLock !== null) {
+        wakeLock.release();
+        wakeLock = null;
       }
       statusEl.textContent = 'Tracking paused';
       startBtn.style.display = 'inline-block';
@@ -180,7 +213,7 @@
       lastCoords = null;
       pathCoords = [];
       milesEl.textContent = '0.00';
-      routeLine.setLatLngs([]);
+      if (routeLine) routeLine.setLatLngs([]);
       statusEl.textContent = 'Press Start to begin tracking';
     });
   </script>
