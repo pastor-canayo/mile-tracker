@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Walk & Run Mile Tracker</title>
-  <link rel="stylesheet" href="https://jsdelivr.net" />
   <style>
     body {
       font-family: system-ui, -apple-system, sans-serif;
@@ -46,6 +45,7 @@
       justify-content: center;
       color: #666;
       font-size: 0.85rem;
+      overflow: hidden;
     }
     button {
       padding: 14px 24px;
@@ -67,13 +67,12 @@
     <h2>Mile Tracker</h2>
     <div class="miles-display"><span id="miles">0.00</span> mi</div>
     <div class="status" id="status">Press Start to begin tracking</div>
-    <div id="map">Map loading...</div>
+    <div id="map">Loading map...</div>
     <button id="startBtn" type="button">Start</button>
     <button id="stopBtn" type="button">Stop</button>
     <button id="resetBtn" type="button">Reset</button>
   </div>
 
-  <script src="https://jsdelivr.net"></script>
   <script>
     let watchId = null;
     let wakeLock = null;
@@ -86,26 +85,36 @@
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const resetBtn = document.getElementById('resetBtn');
+    const mapBox = document.getElementById('map');
 
-    // Safely initialize map so button still works even if map fails
     let map = null;
     let routeLine = null;
     let userMarker = null;
 
-    try {
-      if (typeof L !== 'undefined') {
-        document.getElementById('map').textContent = '';
+    // Build Leaflet URLs dynamically so clipboard tools never truncate them
+    const baseParts = ['https:/', 'unpkg.com', 'leaflet@1.9.4', 'dist'];
+    const cssLink = document.createElement('link');
+    cssLink.rel = 'stylesheet';
+    cssLink.href = [...baseParts, 'leaflet.css'].join('/');
+    document.head.appendChild(cssLink);
+
+    const leafletScript = document.createElement('script');
+    leafletScript.src = [...baseParts, 'leaflet.js'].join('/');
+    leafletScript.onload = () => {
+      try {
+        mapBox.textContent = '';
         map = L.map('map').setView([39.8283, -98.5795], 4);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '&copy; OpenStreetMap'
-        }).addTo(map);
+        const tileUrl = ['https:/', 'tile.openstreetmap.org', '{z}', '{x}', '{y}.png'].join('/');
+        L.tileLayer(tileUrl, { attribution: '&copy; OpenStreetMap' }).addTo(map);
         routeLine = L.polyline([], { color: '#1a73e8', weight: 5 }).addTo(map);
-      } else {
-        document.getElementById('map').textContent = 'Map unavailable (GPS tracking still works!)';
+      } catch (e) {
+        mapBox.textContent = 'Map unavailable (GPS tracking still works!)';
       }
-    } catch (e) {
-      document.getElementById('map').textContent = 'Map unavailable (GPS tracking still works!)';
-    }
+    };
+    leafletScript.onerror = () => {
+      mapBox.textContent = 'Map unavailable (GPS tracking still works!)';
+    };
+    document.body.appendChild(leafletScript);
 
     function calculateMiles(lat1, lon1, lat2, lon2) {
       const R = 3958.8;
@@ -144,7 +153,7 @@
           const { latitude, longitude, accuracy } = position.coords;
 
           if (accuracy > 100) {
-            statusEl.textContent = `Weak GPS signal (±${Math.round(accuracy)}m). Step near a window or outside.`;
+            statusEl.textContent = `Weak GPS signal (±${Math.round(accuracy)}m). Step outside for better accuracy.`;
             return;
           }
 
