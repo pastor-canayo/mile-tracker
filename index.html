@@ -21,10 +21,15 @@
       box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
     .miles-display {
-      font-size: 3.5rem;
+      font-size: 3.3rem;
       font-weight: bold;
       color: #1a73e8;
-      margin: 10px 0;
+      margin: 10px 0 4px 0;
+    }
+    .sub-info {
+      font-size: 0.85rem;
+      color: #666;
+      margin-bottom: 12px;
     }
     .status {
       color: #333;
@@ -65,7 +70,8 @@
 
   <div class="card">
     <h2>Mile Tracker</h2>
-    <div class="miles-display"><span id="miles">0.00</span> mi</div>
+    <div class="miles-display"><span id="miles">0.000</span> mi</div>
+    <div class="sub-info" id="lastUpdate">Waiting to start...</div>
     <div class="status" id="status">Press Start to begin tracking</div>
     <div id="map">Loading map...</div>
     <button id="startBtn" type="button">Start</button>
@@ -81,6 +87,7 @@
     let pathCoords = [];
 
     const milesEl = document.getElementById('miles');
+    const lastUpdateEl = document.getElementById('lastUpdate');
     const statusEl = document.getElementById('status');
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
@@ -151,6 +158,8 @@
       watchId = navigator.geolocation.watchPosition(
         (position) => {
           const { latitude, longitude, accuracy } = position.coords;
+          const now = new Date().toLocaleTimeString();
+          lastUpdateEl.textContent = `Last GPS ping: ${now}`;
 
           if (accuracy > 100) {
             statusEl.textContent = `Weak GPS signal (±${Math.round(accuracy)}m). Step outside for better accuracy.`;
@@ -167,9 +176,10 @@
               latitude,
               longitude
             );
-            if (dist > 0.002) {
+            // Register movement every ~5 feet (0.001 miles) for faster feedback
+            if (dist > 0.001) {
               totalMiles += dist;
-              milesEl.textContent = totalMiles.toFixed(2);
+              milesEl.textContent = totalMiles.toFixed(3);
               lastCoords = { latitude, longitude };
               pathCoords.push(currentPoint);
               if (routeLine) routeLine.setLatLngs(pathCoords);
@@ -221,7 +231,8 @@
       totalMiles = 0;
       lastCoords = null;
       pathCoords = [];
-      milesEl.textContent = '0.00';
+      milesEl.textContent = '0.000';
+      lastUpdateEl.textContent = 'Waiting to start...';
       if (routeLine) routeLine.setLatLngs([]);
       statusEl.textContent = 'Press Start to begin tracking';
     });
